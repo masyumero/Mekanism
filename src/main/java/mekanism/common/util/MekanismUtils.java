@@ -162,12 +162,8 @@ public final class MekanismUtils {
         Item item = stack.getItem();
         String modid = item.getCreatorModId(stack);
         if (modid == null) {
-            ResourceLocation registryName = RegistryUtils.getName(item);
-            if (registryName == null) {
-                Mekanism.logger.error("Unexpected null registry name for item of class type: {}", item.getClass().getSimpleName());
-                return "";
-            }
-            return registryName.getNamespace();
+            Mekanism.logger.error("Unexpected null registry name for item of class type: {}", item.getClass().getSimpleName());
+            return "";
         }
         return modid;
     }

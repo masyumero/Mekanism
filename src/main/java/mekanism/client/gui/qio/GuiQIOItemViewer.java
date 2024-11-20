@@ -86,7 +86,7 @@ public abstract class GuiQIOItemViewer<CONTAINER extends QIOItemViewerContainer>
               .setInputValidator(this::isValidSearchChar)
               .setBackground(BackgroundType.ELEMENT_HOLDER)
               //Note: This responder will also be called when the menu is resized/repositioned and the text gets copied
-              .setResponder(text -> menu.updateSearch(menu.getLevel(), text));
+              .setResponder(text -> menu.updateSearch(menu.getLevel(), text, true));
         searchField.setMaxLength(50);
         searchField.setVisible(true);
         searchField.setTextColor(0xFFFFFF);
@@ -173,7 +173,6 @@ public abstract class GuiQIOItemViewer<CONTAINER extends QIOItemViewerContainer>
         getMinecraft().player.containerMenu = s.getMenu();
         getMinecraft().setScreen(s);
         s.searchField.setText(searchField.getText());
-        c.updateSearch(c.getLevel(), searchField.getText());
         //Transfer all the windows to the new GUI
         s.transferWindows(windows);
     }

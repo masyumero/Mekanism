@@ -128,6 +128,7 @@ import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -593,10 +594,16 @@ public abstract class TileEntityMekanism extends CapabilityTileEntity implements
                 return InteractionResult.PASS;
             }
 
-            player.openMenu(Attribute.getOrThrow(getBlockType(), AttributeGui.class).getProvider(this, true), worldPosition);
+            player.openMenu(Attribute.getOrThrow(getBlockType(), AttributeGui.class).getProvider(this, true), buffer -> {
+                buffer.writeBlockPos(worldPosition);
+                encodeExtraContainerData(buffer);
+            });
             return InteractionResult.CONSUME;
         }
         return InteractionResult.PASS;
+    }
+
+    public void encodeExtraContainerData(RegistryFriendlyByteBuf buffer) {
     }
 
     //TODO - 1.18: Optimize what gets ticks registered to it

@@ -1,12 +1,12 @@
 package mekanism.common.inventory.container;
 
 import it.unimi.dsi.fastutil.objects.Object2LongMap;
-import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -35,6 +35,7 @@ import mekanism.common.inventory.container.slot.VirtualInventoryContainerSlot;
 import mekanism.common.lib.inventory.HashedItem;
 import mekanism.common.lib.inventory.HashedItem.UUIDAwareHashedItem;
 import mekanism.common.network.PacketUtils;
+import mekanism.common.network.to_client.qio.BulkQIOData;
 import mekanism.common.network.to_server.qio.PacketQIOItemViewerSlotPlace;
 import mekanism.common.network.to_server.qio.PacketQIOItemViewerSlotShiftTake;
 import mekanism.common.network.to_server.qio.PacketQIOItemViewerSlotTake;
@@ -69,32 +70,55 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
         return Mth.clamp(maxY, SLOTS_Y_MIN, SLOTS_Y_MAX);
     }
 
-    private ListSortType sortType;
-    private SortDirection sortDirection;
+    protected final Map<UUIDAwareHashedItem, ItemSlotData> cachedInventory;
+    protected final IQIOCraftingWindowHolder craftingWindowHolder;
+    protected final List<IScrollableSlot> searchList;
+    protected final List<IScrollableSlot> itemList;
 
-    private Object2LongMap<UUIDAwareHashedItem> cachedInventory = new Object2LongOpenHashMap<>();
     private long cachedCountCapacity;
     private int cachedTypeCapacity;
     private long totalItems;
 
-    @Nullable
-    private List<IScrollableSlot> itemList;
-    @Nullable
-    private List<IScrollableSlot> searchList;
-
-    private Map<String, List<IScrollableSlot>> searchCache = new Object2ObjectOpenHashMap<>();
-    private String searchQuery = "";
+    private ListSortType sortType;
+    private SortDirection sortDirection;
+    protected String searchQuery;
 
     private int doubleClickTransferTicks = 0;
     private int lastSlot = -1;
     private ItemStack lastStack = ItemStack.EMPTY;
     private List<InventoryContainerSlot>[] craftingGridInputSlots;
-    protected final IQIOCraftingWindowHolder craftingWindowHolder;
     private final VirtualInventoryContainerSlot[][] craftingSlots = new VirtualInventoryContainerSlot[IQIOCraftingWindowHolder.MAX_CRAFTING_WINDOWS][10];
 
-    protected QIOItemViewerContainer(ContainerTypeRegistryObject<?> type, int id, Inventory inv, boolean remote, IQIOCraftingWindowHolder craftingWindowHolder) {
+    protected QIOItemViewerContainer(ContainerTypeRegistryObject<?> type, int id, Inventory inv, boolean remote, IQIOCraftingWindowHolder craftingWindowHolder,
+          BulkQIOData itemData) {
+        this(type, id, inv, remote, craftingWindowHolder, itemData.inventory(), itemData.countCapacity(), itemData.typeCapacity(), itemData.totalItems(), itemData.items(),
+              remote ? new ArrayList<>() : Collections.emptyList(), "",
+              remote ? MekanismConfig.client.qioItemViewerSortType.get() : ListSortType.NAME,
+              remote ? MekanismConfig.client.qioItemViewerSortDirection.get() : SortDirection.ASCENDING,
+              null
+        );
+
+        //If we are on the client, so we likely have items from the server, make sure we sort it
+        if (remote && craftingWindowHolder != null) {//Crafting window holder should never be null here, but if there was an error we handle it
+            updateSort();
+        }
+    }
+
+    protected QIOItemViewerContainer(ContainerTypeRegistryObject<?> type, int id, Inventory inv, boolean remote, IQIOCraftingWindowHolder craftingWindowHolder,
+          Map<UUIDAwareHashedItem, ItemSlotData> cachedInventory, long countCapacity, int typeCapacity, long totalItems, List<IScrollableSlot> itemList,
+          List<IScrollableSlot> searchList, String searchQuery, ListSortType sortType, SortDirection sortDirection, @Nullable SelectedWindowData selectedWindow) {
         super(type, id, inv);
         this.craftingWindowHolder = craftingWindowHolder;
+        this.cachedInventory = cachedInventory;
+        this.searchList = searchList;
+        this.itemList = itemList;
+        this.cachedCountCapacity = countCapacity;
+        this.cachedTypeCapacity = typeCapacity;
+        this.totalItems = totalItems;
+        this.searchQuery = searchQuery;
+        this.sortType = sortType;
+        this.sortDirection = sortDirection;
+        this.selectedWindow = selectedWindow;
         if (craftingWindowHolder == null) {
             //Should never happen, but in case there was an error getting the tile it may have
             Mekanism.logger.error("Error getting crafting window holder, closing.");
@@ -102,8 +126,6 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
             return;
         }
         if (remote) {
-            this.sortType = MekanismConfig.client.qioItemViewerSortType.get();
-            this.sortDirection = MekanismConfig.client.qioItemViewerSortDirection.get();
             //Validate the max size when we are on the client, and fix it if it is incorrect
             int maxY = getSlotsYMax();
             if (MekanismConfig.client.qioItemViewerSlotsY.get() > maxY) {
@@ -112,8 +134,6 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
                 MekanismConfig.client.save();
             }
         } else {
-            this.sortType = ListSortType.NAME;
-            this.sortDirection = SortDirection.ASCENDING;
             craftingGridInputSlots = new List[IQIOCraftingWindowHolder.MAX_CRAFTING_WINDOWS];
         }
     }
@@ -131,19 +151,6 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
      * @apiNote Only used on the client
      */
     public abstract QIOItemViewerContainer recreate();
-
-    protected void sync(QIOItemViewerContainer container) {
-        container.sortType = sortType;
-        container.cachedInventory = cachedInventory;
-        container.cachedCountCapacity = cachedCountCapacity;
-        container.cachedTypeCapacity = cachedTypeCapacity;
-        container.totalItems = totalItems;
-        container.itemList = itemList;
-        container.searchList = searchList;
-        container.searchCache = searchCache;
-        container.searchQuery = searchQuery;
-        container.selectedWindow = getSelectedWindow();
-    }
 
     @Override
     protected int getInventoryYOffset() {
@@ -182,8 +189,11 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
     @Override
     protected void openInventory(@NotNull Inventory inv) {
         super.openInventory(inv);
-        if (getLevel().isClientSide()) {
-            Mekanism.packetHandler().requestQIOData();
+        if (!getLevel().isClientSide()) {
+            QIOFrequency freq = getFrequency();
+            if (freq != null) {
+                freq.openItemViewer((ServerPlayer) inv.player);
+            }
         }
     }
 
@@ -341,13 +351,6 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
         return Optional.empty();
     }
 
-    public void handleBatchUpdate(Object2LongMap<UUIDAwareHashedItem> itemMap, long countCapacity, int typeCapacity) {
-        cachedInventory = itemMap;
-        cachedCountCapacity = countCapacity;
-        cachedTypeCapacity = typeCapacity;
-        syncItemList();
-    }
-
     public void handleUpdate(Object2LongMap<UUIDAwareHashedItem> itemMap, long countCapacity, int typeCapacity) {
         cachedCountCapacity = countCapacity;
         cachedTypeCapacity = typeCapacity;
@@ -356,54 +359,56 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
             // just short circuit a lot of logic
             return;
         }
+        boolean needsSort = sortType.usesCount();
         for (Object2LongMap.Entry<UUIDAwareHashedItem> entry : itemMap.object2LongEntrySet()) {
+            UUIDAwareHashedItem itemKey = entry.getKey();
             long value = entry.getLongValue();
             if (value == 0) {
-                cachedInventory.removeLong(entry.getKey());
+                ItemSlotData oldData = cachedInventory.remove(itemKey);
+                if (oldData != null) {
+                    //If we did in fact have old data stored, remove the item from the stored total count
+                    totalItems -= oldData.count();
+                    // and remove the item from the list of items we are tracking
+                    // Note: Implementation detail is that we use a ReferenceArrayList in BulkQIOData#fromPacket to ensure that when removing
+                    // we only need to do reference equality instead of object equality
+                    //TODO: Can we somehow make removing more efficient by taking advantage of the fact that itemList is sorted?
+                    itemList.remove(oldData);
+                    //Mark that we have some items that changed and it isn't just counts that changed
+                    needsSort = true;
+                }
             } else {
-                cachedInventory.put(entry.getKey(), value);
+                ItemSlotData slotData = cachedInventory.get(itemKey);
+                if (slotData == null) {
+                    //If it is a new item, add the amount to the total items, and start tracking it
+                    totalItems += value;
+                    slotData = new ItemSlotData(itemKey, value);
+                    itemList.add(slotData);
+                    cachedInventory.put(itemKey, slotData);
+                    //Mark that we have some items that changed and it isn't just counts that changed
+                    needsSort = true;
+                } else {
+                    //If an existing item is updated, update the stored amount by the change in quantity
+                    totalItems += value - slotData.count();
+                    slotData.count = value;
+                }
             }
         }
-        syncItemList();
+        if (needsSort) {
+            //Note: We only need to bother resorting the lists and recalculating the sorted searches if an item was added or removed
+            // or if the sort method we have selected is affected at some level by the stored count
+            updateSort();
+        }
     }
 
     public void handleKill() {
-        itemList = null;
-        searchList = null;
         cachedInventory.clear();
+        searchList.clear();
+        itemList.clear();
+        searchQuery = "";
     }
 
     public QIOCraftingTransferHelper getTransferHelper(Player player, QIOCraftingWindow craftingWindow) {
-        return new QIOCraftingTransferHelper(cachedInventory, hotBarSlots, mainInventorySlots, craftingWindow, player);
-    }
-
-    private void syncItemList() {
-        if (itemList == null) {
-            itemList = new ArrayList<>();
-        }
-        itemList.clear();
-        searchCache.clear();
-        totalItems = 0;
-        //Note: While when only updating some items it would be better in terms of memory churn to just update
-        // the entries in the itemList that changed instead of creating a new ItemSlotData for each one that is the same,
-        // this greatly increases the time complexity of doing so due to having to find the matching entry in the itemList
-        // so is not worth doing so
-        for (Object2LongMap.Entry<UUIDAwareHashedItem> entry : cachedInventory.object2LongEntrySet()) {
-            UUIDAwareHashedItem key = entry.getKey();
-            long value = entry.getLongValue();
-            itemList.add(new ItemSlotData(key, key.getUUID(), value));
-            totalItems += value;
-        }
-        sortItemList();
-        if (!searchQuery.isEmpty()) {
-            updateSearch(getLevel(), searchQuery);
-        }
-    }
-
-    private void sortItemList() {
-        if (itemList != null) {
-            sortType.sort(itemList, sortDirection);
-        }
+        return new QIOCraftingTransferHelper(cachedInventory.values(), hotBarSlots, mainInventorySlots, craftingWindow, player);
     }
 
     /**
@@ -413,7 +418,7 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
         this.sortDirection = sortDirection;
         MekanismConfig.client.qioItemViewerSortDirection.set(sortDirection);
         MekanismConfig.client.save();
-        sortItemList();
+        updateSort();
     }
 
     public SortDirection getSortDirection() {
@@ -427,14 +432,14 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
         this.sortType = sortType;
         MekanismConfig.client.qioItemViewerSortType.set(sortType);
         MekanismConfig.client.save();
-        sortItemList();
+        updateSort();
     }
 
     public ListSortType getSortType() {
         return sortType;
     }
 
-    @Nullable
+    @NotNull
     public List<IScrollableSlot> getQIOItemList() {
         return searchQuery.isEmpty() ? itemList : searchList;
     }
@@ -452,7 +457,7 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
     }
 
     public int getTotalTypes() {
-        return itemList == null ? 0 : itemList.size();
+        return itemList.size();
     }
 
     public byte getSelectedCraftingGrid() {
@@ -502,18 +507,31 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
         return stack;
     }
 
-    public void updateSearch(@Nullable Level level, String queryText) {
+    private void updateSort() {
+        sortType.sort(itemList, sortDirection);
+        //TODO: Would it be easier to add/remove changed things that no longer match and then just run the sort on the search list as well?
+        // Or in cases where we are just doing a resort without the search query changing, running a sort on the search list as well?
+        // This might be beneficial at the very least in cases where the search list is small, and the list of total items is large
+        //Note: Update the search as well because it is based on the sorted list so that it displays matches in sorted order
+        updateSearch(getLevel(), searchQuery, false);
+    }
+
+    public void updateSearch(@Nullable Level level, String queryText, boolean skipSameQuery) {
         // searches should only be updated on the client-side
-        if (level == null || !level.isClientSide() || itemList == null) {
+        if (level == null || !level.isClientSide()) {
+            return;
+        } else if (skipSameQuery && searchQuery.equals(queryText)) {
+            //Short circuit and skip updating the search if we already have the results
             return;
         }
+        //TODO: Realistically we may want to be caching the ISearchQuery rather than or in addition to the query text?
         searchQuery = queryText;
-        searchList = searchCache.get(queryText);
-        if (searchList == null) {
-            searchList = new ArrayList<>();
-            ISearchQuery query = SearchQueryParser.parse(queryText);
+        searchList.clear();
+        if (!itemList.isEmpty() && !searchQuery.isEmpty()) {
+            //TODO: Improve how we cache to allow for some form of incremental updating based on the search text changing?
+            ISearchQuery query = SearchQueryParser.parse(searchQuery);
             for (IScrollableSlot slot : itemList) {
-                if (query.test(level, slot.item().getInternalStack())) {
+                if (query.test(level, inv.player, slot.getInternalStack())) {
                     searchList.add(slot);
                 }
             }
@@ -547,7 +565,7 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
             } else {
                 //middle click -> add to current stack if over slot and stackable, else normal storage functionality
                 IScrollableSlot slot;
-                if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && (slot = slotProvider.get()) != null && InventoryUtils.areItemsStackable(heldItem, slot.item().getInternalStack())) {
+                if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && (slot = slotProvider.get()) != null && InventoryUtils.areItemsStackable(heldItem, slot.getInternalStack())) {
                     PacketUtils.sendToServer(new PacketQIOItemViewerSlotTake(slot.itemUUID(), 1));
                 } else {
                     //Left click -> all held, right click -> single item
@@ -558,7 +576,51 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
         }
     }
 
-    private record ItemSlotData(HashedItem item, UUID itemUUID, long count) implements IScrollableSlot {
+    public static final class ItemSlotData implements IScrollableSlot {
+
+        private final UUIDAwareHashedItem item;
+        private long count;
+
+        public ItemSlotData(UUIDAwareHashedItem item, long count) {
+            this.item = item;
+            this.count = count;
+        }
+
+        @Override
+        public HashedItem asRawHashedItem() {
+            return item.asRawHashedItem();
+        }
+
+        @Override
+        public UUIDAwareHashedItem item() {
+            return item;
+        }
+
+        @Override
+        public UUID itemUUID() {
+            return item.getUUID();
+        }
+
+        @Override
+        public long count() {
+            return count;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            } else if (obj == null || obj.getClass() != this.getClass()) {
+                return false;
+            }
+            ItemSlotData other = (ItemSlotData) obj;
+            return this.count == other.count && this.item.equals(other.item);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(item, count);
+        }
     }
 
     public enum SortDirection implements IToggleEnum<SortDirection>, IHasEnumNameTranslationKey {
@@ -597,33 +659,47 @@ public abstract class QIOItemViewerContainer extends MekanismContainer implement
     }
 
     public enum ListSortType implements IDropdownEnum<ListSortType>, TranslatableEnum {
-        NAME(MekanismLang.LIST_SORT_NAME, MekanismLang.LIST_SORT_NAME_DESC, Comparator.comparing(IScrollableSlot::getDisplayName)),
-        SIZE(MekanismLang.LIST_SORT_COUNT, MekanismLang.LIST_SORT_COUNT_DESC, Comparator.comparingLong(IScrollableSlot::count).thenComparing(IScrollableSlot::getDisplayName),
+        NAME(MekanismLang.LIST_SORT_NAME, MekanismLang.LIST_SORT_NAME_DESC, false, Comparator.comparing(IScrollableSlot::getDisplayName)),
+        SIZE(MekanismLang.LIST_SORT_COUNT, MekanismLang.LIST_SORT_COUNT_DESC, true,
+              Comparator.comparingLong(IScrollableSlot::count).thenComparing(IScrollableSlot::getDisplayName),
               Comparator.comparingLong(IScrollableSlot::count).reversed().thenComparing(IScrollableSlot::getDisplayName)),
-        MOD(MekanismLang.LIST_SORT_MOD, MekanismLang.LIST_SORT_MOD_DESC, Comparator.comparing(IScrollableSlot::getModID).thenComparing(IScrollableSlot::getDisplayName),
+        MOD(MekanismLang.LIST_SORT_MOD, MekanismLang.LIST_SORT_MOD_DESC, false,
+              Comparator.comparing(IScrollableSlot::getModID).thenComparing(IScrollableSlot::getDisplayName),
               Comparator.comparing(IScrollableSlot::getModID).reversed().thenComparing(IScrollableSlot::getDisplayName)),
-        REGISTRY_NAME(MekanismLang.LIST_SORT_REGISTRY_NAME, MekanismLang.LIST_SORT_REGISTRY_NAME_DESC,
+        REGISTRY_NAME(MekanismLang.LIST_SORT_REGISTRY_NAME, MekanismLang.LIST_SORT_REGISTRY_NAME_DESC, true,
               Comparator.comparing(IScrollableSlot::getRegistryName, ResourceLocation::compareNamespaced).thenComparingLong(IScrollableSlot::count),
               Comparator.comparing(IScrollableSlot::getRegistryName, ResourceLocation::compareNamespaced).reversed().thenComparingLong(IScrollableSlot::count));
 
         private final ILangEntry name;
         private final ILangEntry tooltip;
+        private final boolean usesCount;
         private final Comparator<IScrollableSlot> ascendingComparator;
         private final Comparator<IScrollableSlot> descendingComparator;
 
-        ListSortType(ILangEntry name, ILangEntry tooltip, Comparator<IScrollableSlot> ascendingComparator) {
-            this(name, tooltip, ascendingComparator, ascendingComparator.reversed());
+        ListSortType(ILangEntry name, ILangEntry tooltip, boolean usesCount, Comparator<IScrollableSlot> ascendingComparator) {
+            this(name, tooltip, usesCount, ascendingComparator, ascendingComparator.reversed());
         }
 
-        ListSortType(ILangEntry name, ILangEntry tooltip, Comparator<IScrollableSlot> ascendingComparator, Comparator<IScrollableSlot> descendingComparator) {
+        ListSortType(ILangEntry name, ILangEntry tooltip, boolean usesCount, Comparator<IScrollableSlot> ascendingComparator,
+              Comparator<IScrollableSlot> descendingComparator) {
             this.name = name;
             this.tooltip = tooltip;
+            this.usesCount = usesCount;
             this.ascendingComparator = ascendingComparator;
             this.descendingComparator = descendingComparator;
         }
 
         public void sort(List<IScrollableSlot> list, SortDirection direction) {
-            list.sort(direction.isAscending() ? ascendingComparator : descendingComparator);
+            if (!list.isEmpty()) {
+                list.sort(direction.isAscending() ? ascendingComparator : descendingComparator);
+            }
+        }
+
+        /**
+         * @return true if the sort type has any level of sorting based on count
+         */
+        public boolean usesCount() {
+            return usesCount;
         }
 
         @Override

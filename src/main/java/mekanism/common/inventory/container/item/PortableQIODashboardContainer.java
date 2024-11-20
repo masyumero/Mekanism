@@ -1,16 +1,21 @@
 package mekanism.common.inventory.container.item;
 
+import java.util.List;
+import java.util.Map;
 import mekanism.api.security.IItemSecurityUtils;
 import mekanism.common.content.qio.IQIOCraftingWindowHolder;
 import mekanism.common.content.qio.PortableQIODashboardInventory;
 import mekanism.common.content.qio.QIOFrequency;
 import mekanism.common.inventory.container.QIOItemViewerContainer;
+import mekanism.common.inventory.container.SelectedWindowData;
 import mekanism.common.inventory.container.item.MekanismItemContainer.IItemContainerTracker;
 import mekanism.common.inventory.container.slot.HotBarSlot;
 import mekanism.common.inventory.container.sync.SyncableFrequency;
 import mekanism.common.inventory.container.sync.SyncableItemStack;
 import mekanism.common.lib.frequency.FrequencyType;
+import mekanism.common.lib.inventory.HashedItem.UUIDAwareHashedItem;
 import mekanism.common.network.PacketUtils;
+import mekanism.common.network.to_client.qio.BulkQIOData;
 import mekanism.common.network.to_server.PacketItemGuiInteract;
 import mekanism.common.network.to_server.PacketItemGuiInteract.ItemGuiInteraction;
 import mekanism.common.registries.MekanismContainerTypes;
@@ -30,19 +35,30 @@ public class PortableQIODashboardContainer extends QIOItemViewerContainer {
     protected ItemStack stack;
     private QIOFrequency freq;
 
-    private PortableQIODashboardContainer(int id, Inventory inv, InteractionHand hand, ItemStack stack, boolean remote, IQIOCraftingWindowHolder craftingWindowHolder) {
-        super(MekanismContainerTypes.PORTABLE_QIO_DASHBOARD, id, inv, remote, craftingWindowHolder);
+    public PortableQIODashboardContainer(int id, Inventory inv, InteractionHand hand, ItemStack stack, boolean remote, BulkQIOData itemData) {
+        super(MekanismContainerTypes.PORTABLE_QIO_DASHBOARD, id, inv, remote, new PortableQIODashboardInventory(inv.player.level(), stack), itemData);
         this.hand = hand;
+        finishConstructor(stack);
+    }
+
+    private PortableQIODashboardContainer(int id, Inventory inv, InteractionHand hand, ItemStack stack, boolean remote, IQIOCraftingWindowHolder craftingWindowHolder,
+          Map<UUIDAwareHashedItem, ItemSlotData> cachedInventory, long countCapacity, int typeCapacity, long totalItems, List<IScrollableSlot> itemList,
+          @Nullable List<IScrollableSlot> searchList, ListSortType sortType, SortDirection sortDirection, String searchQuery, @Nullable SelectedWindowData selectedWindow,
+          QIOFrequency freq) {
+        super(MekanismContainerTypes.PORTABLE_QIO_DASHBOARD, id, inv, remote, craftingWindowHolder, cachedInventory, countCapacity, typeCapacity, totalItems,
+              itemList, searchList, searchQuery, sortType, sortDirection, selectedWindow);
+        this.hand = hand;
+        this.freq = freq;
+        finishConstructor(stack);
+    }
+
+    private void finishConstructor(ItemStack stack) {
         this.stack = stack;
         if (!stack.isEmpty()) {
             //It shouldn't be empty but validate it just in case
             addContainerTrackers();
         }
         addSlotsAndOpen();
-    }
-
-    public PortableQIODashboardContainer(int id, Inventory inv, InteractionHand hand, ItemStack stack, boolean remote) {
-        this(id, inv, hand, stack, remote, new PortableQIODashboardInventory(inv.player.level(), stack));
     }
 
     public InteractionHand getHand() {
@@ -55,17 +71,8 @@ public class PortableQIODashboardContainer extends QIOItemViewerContainer {
 
     @Override
     public PortableQIODashboardContainer recreate() {
-        PortableQIODashboardContainer container = new PortableQIODashboardContainer(containerId, inv, hand, stack, true, craftingWindowHolder);
-        sync(container);
-        return container;
-    }
-
-    @Override
-    protected void sync(QIOItemViewerContainer container) {
-        super.sync(container);
-        if (container instanceof PortableQIODashboardContainer portable) {
-            freq = portable.freq;
-        }
+        return new PortableQIODashboardContainer(containerId, inv, hand, stack, true, craftingWindowHolder, cachedInventory, getCountCapacity(), getTypeCapacity(),
+              getTotalItems(), itemList, searchList, getSortType(), getSortDirection(), searchQuery, getSelectedWindow(), freq);
     }
 
     @Nullable
