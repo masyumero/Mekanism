@@ -16,10 +16,10 @@ public class PacketPlayerData implements IMekanismPacket {
 
     public PacketPlayerData(UUID uuid) {
         this.uuid = uuid;
-        this.activeFlamethrower = Mekanism.playerState.getActiveFlamethrowers().contains(uuid);
-        this.activeJetpack = Mekanism.playerState.getActiveJetpacks().contains(uuid);
-        this.activeScubaMask = Mekanism.playerState.getActiveScubaMasks().contains(uuid);
-        this.activeModulator = Mekanism.playerState.getActiveGravitationalModulators().contains(uuid);
+        this.activeFlamethrower = Mekanism.playerState.isFlamethrowerOn(uuid);
+        this.activeJetpack = Mekanism.playerState.isJetpackOn(uuid);
+        this.activeScubaMask = Mekanism.playerState.isScubaMaskOn(uuid);
+        this.activeModulator = Mekanism.playerState.isGravitationalModulationOn(uuid);
     }
 
     private PacketPlayerData(UUID uuid, boolean activeFlamethrower, boolean activeJetpack, boolean activeGasMask, boolean activeModulator) {

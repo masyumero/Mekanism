@@ -1,10 +1,10 @@
 package mekanism.common.base;
 
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import mekanism.api.functions.FloatSupplier;
 import mekanism.api.gear.IModule;
 import mekanism.api.gear.IModuleHelper;
@@ -41,11 +41,11 @@ public class PlayerState {
     private static final UUID STEP_ASSIST_MODIFIER_UUID = UUID.fromString("026E638A-570D-48F2-BA91-3E86BBB26576");
     private static final UUID SWIM_BOOST_MODIFIER_UUID = UUID.fromString("B8BEEC12-741C-47C3-A74D-AA00F0D2ACF0");
 
-    private final Set<UUID> activeJetpacks = new ObjectOpenHashSet<>();
-    private final Set<UUID> activeScubaMasks = new ObjectOpenHashSet<>();
-    private final Set<UUID> activeGravitationalModulators = new ObjectOpenHashSet<>();
-    private final Set<UUID> activeFlamethrowers = new ObjectOpenHashSet<>();
-    private final Map<UUID, FlightInfo> flightInfoMap = new Object2ObjectOpenHashMap<>();
+    private final Set<UUID> activeJetpacks = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<UUID> activeScubaMasks = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<UUID> activeGravitationalModulators = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<UUID> activeFlamethrowers = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Map<UUID, FlightInfo> flightInfoMap = new ConcurrentHashMap<>();
 
     private LevelAccessor world;
 
@@ -104,7 +104,7 @@ public class PlayerState {
     // ----------------------
 
     public void setJetpackState(UUID uuid, boolean isActive, boolean isLocal) {
-        boolean alreadyActive = activeJetpacks.contains(uuid);
+        boolean alreadyActive = isJetpackOn(uuid);
         boolean changed = alreadyActive != isActive;
         if (alreadyActive && !isActive) {
             // On -> off
@@ -129,11 +129,11 @@ public class PlayerState {
     }
 
     public boolean isJetpackOn(Player p) {
-        return activeJetpacks.contains(p.getUUID());
+        return isJetpackOn(p.getUUID());
     }
 
-    public Set<UUID> getActiveJetpacks() {
-        return activeJetpacks;
+    public boolean isJetpackOn(UUID uuid) {
+        return activeJetpacks.contains(uuid);
     }
 
     // ----------------------
@@ -143,7 +143,7 @@ public class PlayerState {
     // ----------------------
 
     public void setScubaMaskState(UUID uuid, boolean isActive, boolean isLocal) {
-        boolean alreadyActive = activeScubaMasks.contains(uuid);
+        boolean alreadyActive = isScubaMaskOn(uuid);
         boolean changed = alreadyActive != isActive;
         if (alreadyActive && !isActive) {
             activeScubaMasks.remove(uuid); // On -> off
@@ -166,11 +166,11 @@ public class PlayerState {
     }
 
     public boolean isScubaMaskOn(Player p) {
-        return activeScubaMasks.contains(p.getUUID());
+        return isScubaMaskOn(p.getUUID());
     }
 
-    public Set<UUID> getActiveScubaMasks() {
-        return activeScubaMasks;
+    public boolean isScubaMaskOn(UUID uuid) {
+        return activeScubaMasks.contains(uuid);
     }
 
     // ----------------------
@@ -221,7 +221,7 @@ public class PlayerState {
     // ----------------------
 
     public void setGravitationalModulationState(UUID uuid, boolean isActive, boolean isLocal) {
-        boolean alreadyActive = activeGravitationalModulators.contains(uuid);
+        boolean alreadyActive = isGravitationalModulationOn(uuid);
         boolean changed = alreadyActive != isActive;
         if (alreadyActive && !isActive) {
             activeGravitationalModulators.remove(uuid); // On -> off
@@ -244,11 +244,11 @@ public class PlayerState {
     }
 
     public boolean isGravitationalModulationOn(Player p) {
-        return activeGravitationalModulators.contains(p.getUUID());
+        return isGravitationalModulationOn(p.getUUID());
     }
 
-    public Set<UUID> getActiveGravitationalModulators() {
-        return activeGravitationalModulators;
+    public boolean isGravitationalModulationOn(UUID uuid) {
+        return activeGravitationalModulators.contains(uuid);
     }
 
     public void updateFlightInfo(Player player) {
@@ -338,7 +338,7 @@ public class PlayerState {
     }
 
     public void setFlamethrowerState(UUID uuid, boolean hasFlameThrower, boolean isActive, boolean isLocal) {
-        boolean alreadyActive = activeFlamethrowers.contains(uuid);
+        boolean alreadyActive = isFlamethrowerOn(uuid);
         boolean changed = alreadyActive != isActive;
         if (alreadyActive && !isActive) {
             activeFlamethrowers.remove(uuid); // On -> off
@@ -380,11 +380,11 @@ public class PlayerState {
     }
 
     public boolean isFlamethrowerOn(Player p) {
-        return activeFlamethrowers.contains(p.getUUID());
+        return isFlamethrowerOn(p.getUUID());
     }
 
-    public Set<UUID> getActiveFlamethrowers() {
-        return activeFlamethrowers;
+    public boolean isFlamethrowerOn(UUID uuid) {
+        return activeFlamethrowers.contains(uuid);
     }
 
     private static class FlightInfo {

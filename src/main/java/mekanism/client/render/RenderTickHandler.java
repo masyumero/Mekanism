@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.function.Consumer;
 import mekanism.api.RelativeSide;
 import mekanism.client.gui.GuiMekanism;
@@ -250,15 +249,15 @@ public class RenderTickHandler {
     @SubscribeEvent
     public void tickEnd(RenderTickEvent event) {
         if (event.phase == Phase.END) {
+            Level world;
+            Player player = minecraft.player;
             //Note: We check that the game mode is not null as if it is that means the world is unloading, and we don't actually want to be rendering
             // as our data may be out of date or invalid. For example configs could unload while it is still unloading
-            if (minecraft.player != null && minecraft.player.level() != null && !minecraft.isPaused() && minecraft.gameMode != null) {
-                Player player = minecraft.player;
-                Level world = minecraft.player.level();
-                //Traverse active jetpacks and do animations
-                for (UUID uuid : Mekanism.playerState.getActiveJetpacks()) {
-                    Player p = world.getPlayerByUUID(uuid);
-                    if (p != null) {
+            //noinspection ConstantValue
+            if (player != null && (world = player.level()) != null && !minecraft.isPaused() && minecraft.gameMode != null) {
+                for (Player p : world.players()) {
+                    //Check active jetpack and do animations
+                    if (Mekanism.playerState.isJetpackOn(p)) {
                         Pos3D playerPos = new Pos3D(p).translate(0, p.getEyeHeight(), 0);
                         Vec3 playerMotion = p.getDeltaMovement();
                         float random = (world.random.nextFloat() - 0.5F) * 0.1F;
@@ -295,21 +294,15 @@ public class RenderTickHandler {
                         Pos3D vCenter = new Pos3D((world.random.nextFloat() - 0.5) * 0.4, -0.86, -0.30).xRot(xRot).yRot(p.yBodyRot);
                         renderJetpackSmoke(world, playerPos.translate(vCenter, playerMotion), vCenter.scale(0.2).translate(playerMotion));
                     }
-                }
 
-                if (world.getGameTime() % 4 == 0) {
-                    //Traverse active scuba masks and do animations
-                    for (UUID uuid : Mekanism.playerState.getActiveScubaMasks()) {
-                        Player p = world.getPlayerByUUID(uuid);
-                        if (p != null && p.isInWater()) {
+                    //check players and do animations for idle flame throwers & scuba
+                    if (world.getGameTime() % 4 == 0) {
+                        if (p.isInWater() && Mekanism.playerState.isScubaMaskOn(p)) {
                             Pos3D vec = new Pos3D(0.4, 0.4, 0.4).multiply(p.getViewVector(1)).translate(0, -0.2, 0);
                             Pos3D motion = vec.scale(0.2).translate(p.getDeltaMovement());
                             Pos3D v = new Pos3D(p).translate(0, p.getEyeHeight(), 0).translate(vec);
                             world.addParticle(MekanismParticleTypes.SCUBA_BUBBLE.get(), v.x, v.y, v.z, motion.x, motion.y + 0.2, motion.z);
                         }
-                    }
-                    //Traverse players and do animations for idle flame throwers
-                    for (Player p : world.players()) {
                         if (!p.swinging && !Mekanism.playerState.isFlamethrowerOn(p)) {
                             ItemStack currentItem = p.getMainHandItem();
                             if (!currentItem.isEmpty() && currentItem.getItem() instanceof ItemFlamethrower && ChemicalUtil.hasGas(currentItem)) {
