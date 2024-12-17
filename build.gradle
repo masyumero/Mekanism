@@ -367,8 +367,8 @@ dependencies {
         localRuntime("mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}")
     }
 
-    compileOnly("dev.emi:emi-neoforge:${emi_version}+${previous_minor_minecraft_version}:api")
-    def emi = "dev.emi:emi-neoforge:${emi_version}+${previous_minor_minecraft_version}"
+    compileOnly("dev.emi:emi-neoforge:${emi_version}+${minecraft_version}:api")
+    def emi = "dev.emi:emi-neoforge:${emi_version}+${minecraft_version}"
     //TODO: Re-evaluate (https://github.com/emilyploszaj/emi/issues/537) might allow us to not have to do this
     //Compile against full emi in datagen
     datagenMainCompileOnly(emi)

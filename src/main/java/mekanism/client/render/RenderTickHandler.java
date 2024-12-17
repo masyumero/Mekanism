@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -46,6 +47,7 @@ import mekanism.common.util.WorldUtils;
 import mezz.jei.api.runtime.IRecipesGui;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.model.HumanoidModel.ArmPose;
 import net.minecraft.client.model.PlayerModel;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -105,6 +107,7 @@ public class RenderTickHandler {
     private static final Map<Direction, Map<TransmissionType, Model3D>> cachedOverlays = new EnumMap<>(Direction.class);
     private static final List<LazyRender> transparentRenderers = new ArrayList<>();
     private static final BoltRenderer boltRenderer = new BoltRenderer();
+    private static final Map<Class<?>, Boolean> IS_EMI_SCREEN = new HashMap<>();
 
     private boolean outliningArea = false;
 
@@ -134,13 +137,22 @@ public class RenderTickHandler {
             }
             if (Mekanism.hooks.EmiLoaded) {
                 //If Emi is loaded and our current screen is a mekanism gui, check if the new screen is an Emi recipe screen
-                //TODO - 1.20.4: Figure out a better way to handle this https://github.com/emilyploszaj/emi/issues/481
-                if (event.getNewScreen() != null && event.getNewScreen().getClass().getPackageName().startsWith("dev.emi.emi")) {
+                // https://github.com/emilyploszaj/emi/issues/481
+                if (isEmiScreen(event.getNewScreen())) {
                     //If it is mark on our current screen that we are switching to EMI
                     screen.switchingToRecipeViewer = true;
                 }
             }
         }
+    }
+
+    private static boolean isEmiScreen(@Nullable Screen newScreen) {
+        return newScreen != null && IS_EMI_SCREEN.computeIfAbsent(newScreen.getClass(), cl -> {
+            if (cl.getName().startsWith("dev.emi.emi")) {
+                return Boolean.TRUE;
+            }
+            return Boolean.FALSE;
+        }) == Boolean.TRUE;
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
