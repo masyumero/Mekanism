@@ -367,10 +367,17 @@ public abstract class TileEntityMekanism extends CapabilityTileEntity implements
     }
 
     /**
-     * Should data related to the given type be persisted in this tile save and transferred to the item
+     * Should data related to the given type be persisted in this tile save
      */
     public boolean persists(ContainerType<?, ?, ?> type) {
         return type.canHandle(this);
+    }
+
+    /**
+     * Should data related to the given type be transferred to the item
+     */
+    public boolean persistsToItem(ContainerType<?, ?, ?> type) {
+        return persists(type);
     }
 
     /**
@@ -813,7 +820,7 @@ public abstract class TileEntityMekanism extends CapabilityTileEntity implements
         }
 
         for (ContainerType<?, ?, ?> type : ContainerType.TYPES) {
-            if (persists(type)) {
+            if (persistsToItem(type)) {
                 type.copyToTile(this, input);
             }
         }
@@ -836,7 +843,7 @@ public abstract class TileEntityMekanism extends CapabilityTileEntity implements
             component.addRemapEntries(remapEntries);
         }
         for (ContainerType<?, ?, ?> type : ContainerType.TYPES) {
-            if (persists(type) && !remapEntries.contains(type.getComponentType().get())) {
+            if (persistsToItem(type) && !remapEntries.contains(type.getComponentType().get())) {
                 //Ensure we add any container types that we only conditionally added
                 remapEntries.add(type.getComponentType().get());
             }
@@ -876,7 +883,7 @@ public abstract class TileEntityMekanism extends CapabilityTileEntity implements
             component.collectImplicitComponents(builder);
         }
         for (ContainerType<?, ?, ?> type : ContainerType.TYPES) {
-            if (persists(type)) {
+            if (persistsToItem(type)) {
                 type.copyFromTile(this, builder);
             }
         }
