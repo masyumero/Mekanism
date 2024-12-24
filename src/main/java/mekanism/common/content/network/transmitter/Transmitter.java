@@ -456,7 +456,7 @@ public abstract class Transmitter<ACCEPTOR, NETWORK extends DynamicNetwork<ACCEP
                 //Nothing needs to be done
                 return;
             }
-            DynamicNetwork<?, ?, ?> clientNetwork = TransmitterNetworkRegistry.getInstance().getClientNetwork(networkID);
+            DynamicNetwork<?, ?, ?> clientNetwork = TransmitterNetworkRegistry.getClientNetwork(networkID);
             if (clientNetwork == null) {
                 NETWORK network = createEmptyNetworkWithID(networkID);
                 network.register();
