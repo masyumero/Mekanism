@@ -399,6 +399,8 @@ dependencies {
         transitive = false
     }
 
+    runtimeOnly fg.deobf("curse.maven:mekanism-liquid-radioactive-material-1145931:5930764")
+
     compileOnly fg.deobf("curse.maven:jade-api-324717:${jade_api_id}")
     runtimeOnly fg.deobf("curse.maven:jade-324717:${jade_id}")
 
